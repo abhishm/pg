@@ -17,6 +17,7 @@ class Sampler(object):
         self.num_layers = num_layers
         self.max_step = max_step
         self.batch_size = batch_size
+        self.state = self.env.reset()
         self.discount = discount
 
     def compute_monte_carlo_returns(self, rewards):
@@ -30,31 +31,32 @@ class Sampler(object):
     def collect_one_episode(self, render=False):
         states, actions, rewards, dones = [], [], [], []
         init_states = tuple([] for _ in range(self.num_layers))
-        state = self.env.reset()
         init_state = tuple(
              [np.zeros((1, self.gru_unit_size)) for _ in range(self.num_layers)])
         for t in range(self.max_step):
             if render:
                 self.env.render()
-            state = self.preprocessing(state)
+            self.state = self.preprocessing(self.state)
             action, final_state = self.policy.sampleAction(
-                                        state[np.newaxis, np.newaxis, :],
+                                        self.state[np.newaxis, np.newaxis, :],
                                         init_state)
             next_state, reward, done, _ = self.env.step(action)
             # appending the experience
-            states.append(state)
+            states.append(self.state)
             actions.append(action)
             rewards.append(reward)
             [init_states[i].append(init_state[i][0]) for i in
                                            range(self.num_layers)]
             dones.append(done)
             # going to next state
-            state = next_state
+            self.state = next_state
             init_state = final_state
             if done:
+                self.state = self.env.reset()
+            if reward != 0:
                 break
         returns = self.compute_monte_carlo_returns(rewards)
-        returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
+        #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
         episode = dict(
                     states = np.array(states),
                     actions = np.array(actions),

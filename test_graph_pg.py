@@ -51,7 +51,7 @@ optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
 base_file = "_".join([i + "-" + str(v) for i, v in sorted(config.items())
                                     if i not in ["train", "learning"]])
 os.makedirs(base_file, exist_ok=True)
-json.dump(config, open(base_file + "/configuration.json", "w"))                             
+json.dump(config, open(base_file + "/configuration.json", "w"))
 writer = tf.summary.FileWriter(base_file + "/summary/")
 save_path= base_file + '/models/'
 os.makedirs(save_path, exist_ok=True)
