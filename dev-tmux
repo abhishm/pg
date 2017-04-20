@@ -1,0 +1,11 @@
+#!/bin/sh 
+tmux -2  new-session -d -s $1
+tmux split-window -h
+tmux select-pane -t 0
+tmux send-keys "source activate universe" C-m
+tmux send-keys "ipython -i test_graph_pg.py &bg" C-m
+tmux select-pane -t 1
+tmux send-keys "source activate universe" C-m
+DIR=$(ls -td */ | head -1)
+tmux send-keys "cd $DIR" C-m
+tmux send-keys "tensorboard --logdir . --port $2" C-m 
