@@ -84,9 +84,19 @@ def policy_network(states, init_states, seq_len):
             initializer=tf.contrib.layers.xavier_initializer())
         b_softmax = tf.get_variable("b_softmax", shape=[num_actions],
             initializer=tf.constant_initializer(0))
-    
-    logit = tf.matmul(tf.reshape(output, [-1, gru_unit_size]), w_softmax) + b_softmax
-    return logit, final_state
+
+    logit = (tf.matmul(tf.reshape(output, [-1, gru_unit_size]), w_softmax)
+             + b_softmax)
+
+    with tf.variable_scope("value_function"):
+        w_value = tf.get_variable("w_value", shape=[gru_unit_size, 1],
+            initializer=tf.contrib.layers.xavier_initializer())
+        b_value = tf.get_variable("b_value", shape=[1],
+            initializer=tf.constant_initializer(0))
+
+    value = (tf.matmul(tf.reshape(output, [-1, gru_unit_size]), w_value)
+             + b_value)
+    return logit, final_state, value
 
 
 pg_reinforce = PolicyGradientREINFORCE(sess,
@@ -108,20 +118,20 @@ pg_reinforce = PolicyGradientREINFORCE(sess,
 sampler = Sampler(pg_reinforce, env, gru_unit_size, num_step, num_layers,
                max_step, batch_size)
 
-reward = []
-for _ in tqdm(range(num_itr)):
-    if train:
-        batch = sampler.samples()
-        # progress tracking
-        r = batch["rewards"].sum()
-        reward.append(r)
-        # updates
-        pg_reinforce.update_parameters(batch["states"], batch["actions"],
-                                        batch["monte_carlo_returns"],
-                                        batch["init_states"], batch["seq_len"],
-                                        r)
-    else:
-        episode = sampler.collect_one_episode(render=True)
-        print("reward is {0}".format(np.sum(episode["rewards"])))
-
-show_image(reward)
+# reward = []
+# for _ in tqdm(range(num_itr)):
+#     if train:
+#         batch = sampler.samples()
+#         # progress tracking
+#         r = batch["rewards"].sum()
+#         reward.append(r)
+#         # updates
+#         pg_reinforce.update_parameters(batch["states"], batch["actions"],
+#                                         batch["monte_carlo_returns"],
+#                                         batch["init_states"], batch["seq_len"],
+#                                         r)
+#     else:
+#         episode = sampler.collect_one_episode(render=True)
+#         print("reward is {0}".format(np.sum(episode["rewards"])))
+#
+# show_image(reward)

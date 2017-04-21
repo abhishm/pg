@@ -29,7 +29,7 @@ class Sampler(object):
         return returns[::-1]
 
     def collect_one_episode(self, render=False):
-        states, actions, rewards, dones = [], [], [], []
+        states, actions, rewards, values, dones = [], [], [], [], []
         init_states = tuple([] for _ in range(self.num_layers))
         init_state = tuple(
              [np.zeros((1, self.gru_unit_size)) for _ in range(self.num_layers)])
@@ -37,7 +37,7 @@ class Sampler(object):
             if render:
                 self.env.render()
             self.state = self.preprocessing(self.state)
-            action, final_state = self.policy.sampleAction(
+            action, final_state, value = self.policy.sampleAction(
                                         self.state[np.newaxis, np.newaxis, :],
                                         init_state)
             next_state, reward, done, _ = self.env.step(action)
@@ -45,6 +45,7 @@ class Sampler(object):
             states.append(self.state)
             actions.append(action)
             rewards.append(reward)
+            values.append(value)
             [init_states[i].append(init_state[i][0]) for i in
                                            range(self.num_layers)]
             dones.append(done)
@@ -62,10 +63,11 @@ class Sampler(object):
                     actions = np.array(actions),
                     rewards = np.array(rewards),
                     monte_carlo_returns = np.array(returns),
+                    values = np.array(values)
                     init_states = tuple(np.array(init_states[i])
                                    for i in range(self.num_layers)),
                     )
-        return self.expand_episode(episode)
+        return episode
 
     def collect_one_batch(self):
         episodes = []

@@ -79,8 +79,8 @@ class PolicyGradientREINFORCE(object):
   def create_variables_for_actions(self):
     with tf.name_scope("generating_actions"):
       with tf.variable_scope("policy_network"):
-        self.logit, self.final_state = self.policy_network(self.states,
-                                       self.init_states, self.seq_len)
+        self.logit, self.final_state, self.value = self.policy_network(self.states,
+                                                    self.init_states, self.seq_len)
       self.probs = tf.nn.softmax(self.logit)
       with tf.name_scope("computing_entropy"):
         self.entropy = tf.reduce_sum(
@@ -173,10 +173,11 @@ class PolicyGradientREINFORCE(object):
     self.merge_summaries()
 
   def sampleAction(self, states, init_states, seq_len=[1]):
-    probs, final_state = self.session.run([self.probs, self.final_state],
-     {self.states: states, self.init_states: init_states,
-     self.seq_len: seq_len})
-    return np.random.choice(self.num_actions, p=probs[0]), final_state
+    probs, final_state, value = self.session.run([self.probs,
+                                                       self.final_state, self.value],
+                                 {self.states: states, self.init_states: init_states,
+                                  self.seq_len: seq_len})
+    return np.random.choice(self.num_actions, p=probs[0]), final_state, value
 
   def compute_action_probabilities(self, states, init_states, seq_len):
     return self.session.run(self.probs, {self.states: states,
