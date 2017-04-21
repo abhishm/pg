@@ -58,13 +58,15 @@ class Sampler(object):
             if reward == 0:
                 break
         returns = self.compute_monte_carlo_returns(rewards)
-        returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
-        advantage = np.array(returns) - np.array(values)
+        #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
+        advantages = np.array(returns) - np.array(values)
+        #advantages = (advan)
         episode = dict(
                     states = np.array(states),
                     actions = np.array(actions),
                     rewards = np.array(rewards),
-                    monte_carlo_returns = advantage,
+                    monte_carlo_returns = np.array(returns),
+                    advantages = advantages,
                     init_states = tuple(np.array(init_states[i])
                                    for i in range(self.num_layers)),
                     )

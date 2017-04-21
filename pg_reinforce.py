@@ -70,6 +70,7 @@ class PolicyGradientREINFORCE(object):
       self.states = tf.placeholder(tf.float32, (None, None, self.state_dim), name="states")
       self.actions = tf.placeholder(tf.int32, (None, None), name="actions")
       self.returns = tf.placeholder(tf.float32, (None, None), name="returns")
+      self.advantages = tf.placeholder(tf.float32, (None, None), name="advantages")
       self.init_states = tuple(tf.placeholder(tf.float32, (None, self.gru_unit_size),
                                                                  name="init_states")
                                                     for _ in range(self.num_layers))
@@ -121,7 +122,7 @@ class PolicyGradientREINFORCE(object):
 
 
       self.loss = tf.reduce_mean(tf.multiply(self.masked_loss_applied,
-                                 tf.reshape(self.returns, (-1,))))
+                                 tf.reshape(self.advantages, (-1,))))
 
       self.loss -= self.entropy_bonus * self.masked_entropy
 
@@ -185,8 +186,8 @@ class PolicyGradientREINFORCE(object):
                                          self.init_states: init_states,
                                          self.seq_len: seq_len})
 
-  def update_parameters(self, states, actions, returns, init_states,
-            seq_len, reward):
+  def update_parameters(self, states, actions, returns, advantages,
+                        init_states, seq_len, reward):
     train_itr = self.session.run(self.global_step)
     write_summary = train_itr % self.summary_every == 0
     self.reward_stats.append(reward)
@@ -195,6 +196,7 @@ class PolicyGradientREINFORCE(object):
                                   {self.states: states,
                                    self.actions: actions,
                                    self.returns: returns,
+                                   self.advantages: advantages
                                    self.init_states: init_states,
                                    self.seq_len: seq_len,
                                    self.reward: np.mean(self.reward_stats)})

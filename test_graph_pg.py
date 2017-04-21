@@ -126,9 +126,12 @@ for _ in tqdm(range(num_itr)):
         r = batch["rewards"].sum()
         reward.append(r)
         # updates
-        pg_reinforce.update_parameters(batch["states"], batch["actions"],
+        pg_reinforce.update_parameters(batch["states"],
+                                        batch["actions"],
                                         batch["monte_carlo_returns"],
-                                        batch["init_states"], batch["seq_len"],
+                                        batch["advantages"],
+                                        batch["init_states"],
+                                        batch["seq_len"],
                                         r)
     else:
         episode = sampler.collect_one_episode(render=True)
