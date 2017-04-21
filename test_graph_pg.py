@@ -84,7 +84,7 @@ def policy_network(states, init_states, seq_len):
             initializer=tf.contrib.layers.xavier_initializer())
         b_softmax = tf.get_variable("b_softmax", shape=[num_actions],
             initializer=tf.constant_initializer(0))
-
+    
     logit = tf.matmul(tf.reshape(output, [-1, gru_unit_size]), w_softmax) + b_softmax
     return logit, final_state
 

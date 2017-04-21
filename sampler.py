@@ -9,7 +9,7 @@ class Sampler(object):
                  num_layers=1,
                  max_step=2000,
                  batch_size=10000,
-                 discount=0.9):
+                 discount=1.00):
         self.policy = policy
         self.env = env
         self.gru_unit_size = gru_unit_size
