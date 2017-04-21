@@ -9,7 +9,7 @@ class Sampler(object):
                  num_layers=1,
                  max_step=2000,
                  batch_size=10000,
-                 discount=1.00):
+                 discount=0.99):
         self.policy = policy
         self.env = env
         self.gru_unit_size = gru_unit_size
@@ -46,7 +46,7 @@ class Sampler(object):
             states.append(self.state)
             actions.append(action)
             rewards.append(reward)
-            values.append(0)
+            values.append(value[0, 0])
             [init_states[i].append(init_state[i][0]) for i in
                                            range(self.num_layers)]
             dones.append(done)
@@ -60,7 +60,8 @@ class Sampler(object):
         returns = self.compute_monte_carlo_returns(rewards)
         #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
         advantages = np.array(returns) - np.array(values)
-        #advantages = (advan)
+        #advantages = ((advantages - np.mean(advantages))
+        #              / (np.std(advantages) + 1e-8))
         episode = dict(
                     states = np.array(states),
                     actions = np.array(actions),
@@ -85,6 +86,8 @@ class Sampler(object):
         rewards = np.concatenate([episode["rewards"] for episode in episodes])
         monte_carlo_returns = np.concatenate([episode["monte_carlo_returns"]
                                  for episode in episodes])
+        advantages = np.concatenate([episode["advantages"]
+                                      for episode in episodes])
 
         init_states = tuple(
                        np.concatenate([episode["init_states"][i]
@@ -96,6 +99,7 @@ class Sampler(object):
                     actions = actions,
                     rewards = rewards,
                     monte_carlo_returns = monte_carlo_returns,
+                    advantages = advantages,
                     init_states = init_states,
                     seq_len = seq_len
                     )

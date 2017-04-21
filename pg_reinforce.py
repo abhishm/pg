@@ -120,9 +120,16 @@ class PolicyGradientREINFORCE(object):
                                             self.truncated_mask)
       self.masked_entropy = tf.reduce_mean(self.masked_entropy)
 
+      self.value_loss = (tf.reshape(self.value, (-1,))
+                         - tf.reshape(self.returns, (-1,))) ** 2
+      self.masked_value_loss = tf.multiply(self.value_loss, self.mask)
+      self.masked_value_loss = tf.multiply(self.masked_value_loss,
+                                           self.truncated_mask)
 
-      self.loss = tf.reduce_mean(tf.multiply(self.masked_loss_applied,
+
+      self.loss = (tf.reduce_mean(tf.multiply(self.masked_loss_applied,
                                  tf.reshape(self.advantages, (-1,))))
+                   + tf.reduce_mean(self.masked_value_loss))
 
       self.loss -= self.entropy_bonus * self.masked_entropy
 
@@ -196,7 +203,7 @@ class PolicyGradientREINFORCE(object):
                                   {self.states: states,
                                    self.actions: actions,
                                    self.returns: returns,
-                                   self.advantages: advantages
+                                   self.advantages: advantages,
                                    self.init_states: init_states,
                                    self.seq_len: seq_len,
                                    self.reward: np.mean(self.reward_stats)})
