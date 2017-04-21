@@ -127,7 +127,8 @@ class PolicyGradientREINFORCE(object):
 
       self.gradients = self.optimizer.compute_gradients(self.loss)
       self.clipped_gradients = [(tf.clip_by_norm(grad, self.max_gradient), var)
-                                  for grad, var in self.gradients]
+                                  for grad, var in self.gradients
+                                  if grad is not None]
 
       self.train_op = self.optimizer.apply_gradients(self.clipped_gradients,
                                                      self.global_step)

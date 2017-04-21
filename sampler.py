@@ -29,6 +29,7 @@ class Sampler(object):
         return returns[::-1]
 
     def collect_one_episode(self, render=False):
+        self.state = self.env.reset() # NB. remove it for Pong
         states, actions, rewards, values, dones = [], [], [], [], []
         init_states = tuple([] for _ in range(self.num_layers))
         init_state = tuple(
@@ -45,7 +46,7 @@ class Sampler(object):
             states.append(self.state)
             actions.append(action)
             rewards.append(reward)
-            values.append(value)
+            values.append(0)
             [init_states[i].append(init_state[i][0]) for i in
                                            range(self.num_layers)]
             dones.append(done)
@@ -54,20 +55,20 @@ class Sampler(object):
             init_state = final_state
             if done:
                 self.state = self.env.reset()
-            if reward != 0:
+            if reward == 0:
                 break
         returns = self.compute_monte_carlo_returns(rewards)
-        #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
+        returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
+        advantage = np.array(returns) - np.array(values)
         episode = dict(
                     states = np.array(states),
                     actions = np.array(actions),
                     rewards = np.array(rewards),
-                    monte_carlo_returns = np.array(returns),
-                    values = np.array(values)
+                    monte_carlo_returns = advantage,
                     init_states = tuple(np.array(init_states[i])
                                    for i in range(self.num_layers)),
                     )
-        return episode
+        return self.expand_episode(episode)
 
     def collect_one_batch(self):
         episodes = []

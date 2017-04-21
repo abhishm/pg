@@ -77,7 +77,7 @@ def policy_network(states, init_states, seq_len):
         gru_cells = tf.contrib.rnn.MultiRNNCell([gru_cell] * num_layers)
         output, final_state = tf.nn.dynamic_rnn(gru_cells, states,
                 initial_state=init_states, sequence_length=seq_len)
-        output = tf.nn.relu(output)
+        output = output
 
     with tf.variable_scope("softmax"):
         w_softmax = tf.get_variable("w_softmax", shape=[gru_unit_size, num_actions],
@@ -118,20 +118,20 @@ pg_reinforce = PolicyGradientREINFORCE(sess,
 sampler = Sampler(pg_reinforce, env, gru_unit_size, num_step, num_layers,
                max_step, batch_size)
 
-# reward = []
-# for _ in tqdm(range(num_itr)):
-#     if train:
-#         batch = sampler.samples()
-#         # progress tracking
-#         r = batch["rewards"].sum()
-#         reward.append(r)
-#         # updates
-#         pg_reinforce.update_parameters(batch["states"], batch["actions"],
-#                                         batch["monte_carlo_returns"],
-#                                         batch["init_states"], batch["seq_len"],
-#                                         r)
-#     else:
-#         episode = sampler.collect_one_episode(render=True)
-#         print("reward is {0}".format(np.sum(episode["rewards"])))
-#
-# show_image(reward)
+reward = []
+for _ in tqdm(range(num_itr)):
+    if train:
+        batch = sampler.samples()
+        # progress tracking
+        r = batch["rewards"].sum()
+        reward.append(r)
+        # updates
+        pg_reinforce.update_parameters(batch["states"], batch["actions"],
+                                        batch["monte_carlo_returns"],
+                                        batch["init_states"], batch["seq_len"],
+                                        r)
+    else:
+        episode = sampler.collect_one_episode(render=True)
+        print("reward is {0}".format(np.sum(episode["rewards"])))
+
+show_image(reward)
