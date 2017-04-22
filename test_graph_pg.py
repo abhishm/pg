@@ -32,6 +32,7 @@ max_gradient = config["max_gradient_norm"]
 loss_function = config["loss_function"]
 entropy_bonus = config["entropy_bonus"]
 num_layers = config["num_layers"]
+discount = config["discount"]
 learning_adaptive = config["learning"]["learning_adaptive"]
 if learning_adaptive:
     learning_rate = tf.train.exponential_decay(
@@ -116,7 +117,7 @@ pg_reinforce = PolicyGradientREINFORCE(sess,
                                        loss_function=loss_function)
 
 sampler = Sampler(pg_reinforce, env, gru_unit_size, num_step, num_layers,
-               max_step, batch_size)
+               max_step, batch_size, discount=discount)
 
 reward = []
 for _ in tqdm(range(num_itr)):

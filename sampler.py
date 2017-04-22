@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.signal
 
 class Sampler(object):
     def __init__(self,
@@ -28,6 +29,21 @@ class Sampler(object):
             returns.append(return_so_far)
         return returns[::-1]
 
+    def n_step_returns(self, rewards, values, final_value, n=5):
+        """
+        >>> n_step_returns([1., 1, 1, 1, 1, 0], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6], 0, n=2)
+        = np.array([2.2, 2.2, 2.2, 2.2, 0.5, -0.6])
+        """
+        discount = 1
+        filter_ = discount ** np.arange(n)
+        filtered_reward = scipy.signal.lfilter(filter_, [1.], rewards[::-1])[::-1]
+        discounts = np.concatenate([[discount ** n] * (len(rewards) - n + 1),
+                                   discount ** np.arange(n - 1, 0, -1)])
+        shifted_values = np.concatenate([values[n:], [final_value] * n])
+        n_step =  filtered_reward + discounts * shifted_values
+        return n_step
+
+
     def collect_one_episode(self, render=False):
         self.state = self.env.reset() # NB. remove it for Pong
         states, actions, rewards, values, dones = [], [], [], [], []
@@ -54,14 +70,22 @@ class Sampler(object):
             self.state = next_state
             init_state = final_state
             if done:
+                final_value = 0.0
                 self.state = self.env.reset()
+            else: ### Modification for conputing the value for final state
+                _, _, final_value = self.policy.sampleAction(
+                                            self.state[np.newaxis, np.newaxis, :],
+                                            init_state)
             if reward == 0:
                 break
-        returns = self.compute_monte_carlo_returns(rewards)
+
+        # NB. configure for Monter Carlo or n-step returns
+        # returns = self.monte_carlo_returns(rewards)
+        returns = self.n_step_returns(rewards, values, final_value[0, 0], n=5)
         #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
         advantages = np.array(returns) - np.array(values)
-        #advantages = ((advantages - np.mean(advantages))
-        #              / (np.std(advantages) + 1e-8))
+        advantages = ((advantages - np.mean(advantages))
+                      / (np.std(advantages) + 1e-8))
         episode = dict(
                     states = np.array(states),
                     actions = np.array(actions),
