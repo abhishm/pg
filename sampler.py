@@ -10,7 +10,8 @@ class Sampler(object):
                  num_layers=1,
                  max_step=2000,
                  batch_size=10000,
-                 discount=0.99):
+                 discount=0.99,
+                 n_step_TD=5):
         self.policy = policy
         self.env = env
         self.gru_unit_size = gru_unit_size
@@ -20,6 +21,7 @@ class Sampler(object):
         self.batch_size = batch_size
         self.state = self.env.reset()
         self.discount = discount
+        self.n_step_TD = n_step_TD
 
     def compute_monte_carlo_returns(self, rewards):
         return_so_far = 0
@@ -32,16 +34,15 @@ class Sampler(object):
     def n_step_returns(self, rewards, values, final_value, n=5):
         """
         >>> n_step_returns([1., 1, 1, 1, 1, 0], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6], 0, n=2)
-        = np.array([2.2, 2.2, 2.2, 2.2, 0.5, -0.6])
+        = np.array([2.3, 2.4, 2.5, 2.6, 1.0, 0.0])
         """
-        discount = 1
-        filter_ = discount ** np.arange(n)
+        filter_ = self.discount ** np.arange(n)
         filtered_reward = scipy.signal.lfilter(filter_, [1.], rewards[::-1])[::-1]
-        discounts = np.concatenate([[discount ** n] * (len(rewards) - n + 1),
-                                   discount ** np.arange(n - 1, 0, -1)])
+        discounts = np.concatenate([[self.discount ** n] * (len(rewards) - n + 1),
+                                   self.discount ** np.arange(n - 1, 0, -1)])
         shifted_values = np.concatenate([values[n:], [final_value] * n])
-        n_step =  filtered_reward + discounts * shifted_values
-        return n_step
+        n_step_value =  filtered_reward + discounts * shifted_values
+        return n_step_value
 
 
     def collect_one_episode(self, render=False):
@@ -69,23 +70,25 @@ class Sampler(object):
             # going to next state
             self.state = next_state
             init_state = final_state
-            if done:
-                final_value = 0.0
-                self.state = self.env.reset()
-            else: ### Modification for conputing the value for final state
-                _, _, final_value = self.policy.sampleAction(
-                                            self.state[np.newaxis, np.newaxis, :],
-                                            init_state)
             if reward == 0:
+                self.state = self.env.reset()
                 break
+        if done:
+            final_value = 0.0
+        else:
+            _, _, final_value = self.policy.sampleAction(
+                                        self.state[np.newaxis, np.newaxis, :],
+                                        init_state)
+            final_value = final_value[0, 0]
 
         # NB. configure for Monter Carlo or n-step returns
-        # returns = self.monte_carlo_returns(rewards)
-        returns = self.n_step_returns(rewards, values, final_value[0, 0], n=5)
+        #returns = self.compute_monte_carlo_returns(rewards)
+        returns = self.n_step_returns(rewards, values, final_value,
+                                       n=self.n_step_TD)
         #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
         advantages = np.array(returns) - np.array(values)
-        advantages = ((advantages - np.mean(advantages))
-                      / (np.std(advantages) + 1e-8))
+        # advantages = ((advantages - np.mean(advantages))
+        #               / (np.std(advantages) + 1e-8))
         episode = dict(
                     states = np.array(states),
                     actions = np.array(actions),
