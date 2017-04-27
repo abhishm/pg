@@ -31,11 +31,15 @@ class Sampler(object):
             returns.append(return_so_far)
         return returns[::-1]
 
-    def n_step_returns(self, rewards, values, final_value, n=5):
+    def n_step_returns(self, rewards, values, final_value):
         """
-        >>> n_step_returns([1., 1, 1, 1, 1, 0], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6], 0, n=2)
+        >>> n_step_returns([1., 1, 1, 1, 1, 0], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6], 0)
         = np.array([2.3, 2.4, 2.5, 2.6, 1.0, 0.0])
         """
+        if self.n_step_TD > len(rewards):
+            n = len(rewards)
+        else:
+            n = self.n_step_TD
         filter_ = self.discount ** np.arange(n)
         filtered_reward = scipy.signal.lfilter(filter_, [1.], rewards[::-1])[::-1]
         discounts = np.concatenate([[self.discount ** n] * (len(rewards) - n + 1),
@@ -83,12 +87,11 @@ class Sampler(object):
 
         # NB. configure for Monter Carlo or n-step returns
         #returns = self.compute_monte_carlo_returns(rewards)
-        returns = self.n_step_returns(rewards, values, final_value,
-                                       n=self.n_step_TD)
+        returns = self.n_step_returns(rewards, values, final_value)
         #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
         advantages = np.array(returns) - np.array(values)
         # advantages = ((advantages - np.mean(advantages))
-        #               / (np.std(advantages) + 1e-8))
+        #                / (np.std(advantages) + 1e-8))
         episode = dict(
                     states = np.array(states),
                     actions = np.array(actions),

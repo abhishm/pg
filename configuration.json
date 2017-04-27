@@ -1,5 +1,5 @@
 {
-  "batch_size": 18,
+  "batch_size": 13,
   "entropy_bonus": 0.001,
   "env_name": "Acrobot-v1",
   "gru_unit_size": 16,
@@ -16,5 +16,5 @@
   "num_step": 10,
   "train": 1,
   "discount": 0.99,
-  "n_step_TD": 50
+  "n_step_TD": 501
 }
