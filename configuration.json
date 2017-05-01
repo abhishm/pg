@@ -16,5 +16,5 @@
   "num_step": 10,
   "train": 1,
   "discount": 0.99,
-  "n_step_TD": 501
+  "n_step_TD": 50
 }
