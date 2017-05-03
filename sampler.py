@@ -19,9 +19,14 @@ class Sampler(object):
         self.num_layers = num_layers
         self.max_step = max_step
         self.batch_size = batch_size
-        self.state = self.env.reset()
         self.discount = discount
         self.n_step_TD = n_step_TD
+        self.state = self.env.reset()
+        self.init_state = tuple(
+                [np.zeros((1, self.gru_unit_size)) for _ in range(self.num_layers)])
+
+    def discounted_x(self, x):
+        return scipy.signal.lfilter([1], [1, -self.discount], x[::-1])[::-1]
 
     def compute_monte_carlo_returns(self, rewards):
         return_so_far = 0
@@ -48,47 +53,63 @@ class Sampler(object):
         n_step_value =  filtered_reward + discounts * shifted_values
         return n_step_value
 
+    def gae_estimate(self, rewards, values, final_value):
+        """
+        >>>
+
+        """
+    def return_estimate(self, rewards, final_value):
+       """
+       >>> return_estimate([1., 1., 1.], 5)
+       = np.array([1 + self.discount + self.discount ** 2 + self.discount ** 3 * 5,
+                                        1 + self.discount + self.discount ** 2 * 5,
+                                                             1 + self.discount * 5])
+       """
+       reward_plus = rewards + [final_value]
+       return  self.discounted_x(reward_plus)[:-1]
+
 
     def collect_one_episode(self, render=False):
-        self.state = self.env.reset() # NB. remove it for Pong
         states, actions, rewards, values, dones = [], [], [], [], []
         init_states = tuple([] for _ in range(self.num_layers))
-        init_state = tuple(
-             [np.zeros((1, self.gru_unit_size)) for _ in range(self.num_layers)])
-        for t in range(self.max_step):
+
+        for t in range(self.num_step):
             if render:
                 self.env.render()
             self.state = self.preprocessing(self.state)
             action, final_state, value = self.policy.sampleAction(
                                         self.state[np.newaxis, np.newaxis, :],
-                                        init_state)
+                                        self.init_state)
             next_state, reward, done, _ = self.env.step(action)
             # appending the experience
             states.append(self.state)
             actions.append(action)
             rewards.append(reward)
             values.append(value[0, 0])
-            [init_states[i].append(init_state[i][0]) for i in
-                                           range(self.num_layers)]
+            for i in range(self.num_layers):
+              init_states[i].append(self.init_state[i][0])
             dones.append(done)
             # going to next state
             self.state = next_state
-            init_state = final_state
+            self.init_state = final_state
             if reward == 0:
                 self.state = self.env.reset()
+                self.init_state = tuple(
+                 [np.zeros((1, self.gru_unit_size)) for _ in range(self.num_layers)])
                 break
         if done:
             final_value = 0.0
         else:
             _, _, final_value = self.policy.sampleAction(
                                         self.state[np.newaxis, np.newaxis, :],
-                                        init_state)
+                                        self.init_state)
             final_value = final_value[0, 0]
 
         # NB. configure for Monter Carlo or n-step returns
         #returns = self.compute_monte_carlo_returns(rewards)
-        returns = self.n_step_returns(rewards, values, final_value)
         #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
+        #returns = self.n_step_returns(rewards, values, final_value)
+        returns = self.return_estimate(rewards, final_value)
         advantages = np.array(returns) - np.array(values)
         # advantages = ((advantages - np.mean(advantages))
         #                / (np.std(advantages) + 1e-8))
