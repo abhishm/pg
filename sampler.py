@@ -1,3 +1,4 @@
+import tensorflow as tf
 import numpy as np
 import scipy.signal
 
@@ -5,186 +6,92 @@ class Sampler(object):
     def __init__(self,
                  policy,
                  env,
-                 gru_unit_size=16,
-                 num_step=10,
-                 num_layers=1,
-                 max_step=2000,
-                 batch_size=10000,
-                 discount=0.99,
-                 n_step_TD=5):
+                 gru_unit_size=256,
+                 num_step=20,
+                 gamma=0.99,
+                 lambda_=1.00,
+                 summary_writer=None):
         self.policy = policy
         self.env = env
         self.gru_unit_size = gru_unit_size
         self.num_step = num_step
-        self.num_layers = num_layers
-        self.max_step = max_step
-        self.batch_size = batch_size
-        self.discount = discount
-        self.n_step_TD = n_step_TD
-        self.state = self.env.reset()
-        self.init_state = tuple(
-                [np.zeros((1, self.gru_unit_size)) for _ in range(self.num_layers)])
+        self.gamma = gamma
+        self.lambda_ = lambda_
+        self.summary_writer = summary_writer
+        self.observation = self.env.reset()
+        self.init_state = np.zeros((1, self.gru_unit_size))
 
-    def discounted_x(self, x):
-        return scipy.signal.lfilter([1], [1, -self.discount], x[::-1])[::-1]
+    def discounted_x(self, x, gamma):
+        return scipy.signal.lfilter([1], [1, -gamma], x[::-1])[::-1]
 
-    def compute_monte_carlo_returns(self, rewards):
-        return_so_far = 0
-        returns = []
-        for reward in rewards[::-1]:
-            return_so_far = reward + self.discount * return_so_far
-            returns.append(return_so_far)
-        return returns[::-1]
 
     def n_step_returns(self, rewards, values, final_value):
         """
-        >>> n_step_returns([1., 1, 1, 1, 1, 0], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6], 0)
-        = np.array([2.3, 2.4, 2.5, 2.6, 1.0, 0.0])
+        returns the value estime and GAE estimate
         """
-        if self.n_step_TD > len(rewards):
-            n = len(rewards)
-        else:
-            n = self.n_step_TD
-        filter_ = self.discount ** np.arange(n)
-        filtered_reward = scipy.signal.lfilter(filter_, [1.], rewards[::-1])[::-1]
-        discounts = np.concatenate([[self.discount ** n] * (len(rewards) - n + 1),
-                                   self.discount ** np.arange(n - 1, 0, -1)])
-        shifted_values = np.concatenate([values[n:], [final_value] * n])
-        n_step_value =  filtered_reward + discounts * shifted_values
-        return n_step_value
+        reward_plus = np.array(rewards + [final_value])
+        value_plus = np.array(values + [final_value])
 
-    def gae_estimate(self, rewards, values, final_value):
-        """
-        >>>
+        n_step_pred = self.discounted_x(reward_plus, self.gamma)[:-1]
 
-        """
-    def return_estimate(self, rewards, final_value):
-       """
-       >>> return_estimate([1., 1., 1.], 5)
-       = np.array([1 + self.discount + self.discount ** 2 + self.discount ** 3 * 5,
-                                        1 + self.discount + self.discount ** 2 * 5,
-                                                             1 + self.discount * 5])
-       """
-       reward_plus = rewards + [final_value]
-       return  self.discounted_x(reward_plus)[:-1]
+        delta_t = rewards + self.gamma * value_plus[1:] - value_plus[:-1]
+        # this formula for the advantage comes "Generalized Advantage Estimation":
+        # https://arxiv.org/abs/1506.02438
+        adv = self.discounted_x(delta_t, self.gamma * self.lambda_)
+        return n_step_pred, adv
 
 
-    def collect_one_episode(self, render=False):
-        states, actions, rewards, values, dones = [], [], [], [], []
-        init_states = tuple([] for _ in range(self.num_layers))
+    def collect_batch(self, render=False):
+        observations, actions, rewards, values = [], [], [], []
+        init_state = self.init_state.copy()
 
         for t in range(self.num_step):
             if render:
                 self.env.render()
-            self.state = self.preprocessing(self.state)
-            action, final_state, value = self.policy.sampleAction(
-                                        self.state[np.newaxis, np.newaxis, :],
+            action, next_state, value = self.policy.sampleAction(
+                                        self.observation[np.newaxis, :],
                                         self.init_state)
-            next_state, reward, done, _ = self.env.step(action)
+            next_ob, reward, done, info = self.env.step(action)
             # appending the experience
-            states.append(self.state)
+            observations.append(self.observation)
             actions.append(action)
             rewards.append(reward)
             values.append(value[0, 0])
-            for i in range(self.num_layers):
-              init_states[i].append(self.init_state[i][0])
-            dones.append(done)
             # going to next state
-            self.state = next_state
-            self.init_state = final_state
-            if reward == 0:
-                self.state = self.env.reset()
-                self.init_state = tuple(
-                 [np.zeros((1, self.gru_unit_size)) for _ in range(self.num_layers)])
+            self.observation = next_ob
+            self.init_state = next_state
+
+            if info:
+                summary = tf.Summary()
+                global_step = self.policy.session.run(self.policy.global_step)
+                for k, v in info.items():
+                    summary.value.add(tag=k, simple_value=float(v))
+                self.summary_writer.add_summary(summary, global_step)
+                self.summary_writer.flush()
+
+            if done:
+                self.observation = self.env.reset()
+                self.init_state = np.zeros((1, self.gru_unit_size))
                 break
+
         if done:
             final_value = 0.0
         else:
             _, _, final_value = self.policy.sampleAction(
-                                        self.state[np.newaxis, np.newaxis, :],
+                                        self.observation[np.newaxis, :],
                                         self.init_state)
             final_value = final_value[0, 0]
 
-        # NB. configure for Monter Carlo or n-step returns
-        #returns = self.compute_monte_carlo_returns(rewards)
-        #returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
-        #returns = self.n_step_returns(rewards, values, final_value)
-        returns = self.return_estimate(rewards, final_value)
-        advantages = np.array(returns) - np.array(values)
-        # advantages = ((advantages - np.mean(advantages))
-        #                / (np.std(advantages) + 1e-8))
+        returns, advantages = self.n_step_returns(rewards, values, final_value)
+
         episode = dict(
-                    states = np.array(states),
+                    observations = np.array(observations),
                     actions = np.array(actions),
-                    rewards = np.array(rewards),
-                    monte_carlo_returns = np.array(returns),
+                    returns = returns,
                     advantages = advantages,
-                    init_states = tuple(np.array(init_states[i])
-                                   for i in range(self.num_layers)),
+                    init_state = init_state,
                     )
-        return self.expand_episode(episode)
-
-    def collect_one_batch(self):
-        episodes = []
-        len_samples = 0
-        while len_samples < self.batch_size:
-            episode = self.collect_one_episode()
-            episodes.append(episode)
-            len_samples += np.sum(episode["seq_len"])
-        # prepare input
-        states = np.concatenate([episode["states"] for episode in episodes])
-        actions = np.concatenate([episode["actions"] for episode in episodes])
-        rewards = np.concatenate([episode["rewards"] for episode in episodes])
-        monte_carlo_returns = np.concatenate([episode["monte_carlo_returns"]
-                                 for episode in episodes])
-        advantages = np.concatenate([episode["advantages"]
-                                      for episode in episodes])
-
-        init_states = tuple(
-                       np.concatenate([episode["init_states"][i]
-                                       for episode in episodes])
-                       for i in range(self.num_layers))
-        seq_len = np.concatenate([episode["seq_len"] for episode in episodes])
-        batch = dict(
-                    states = states,
-                    actions = actions,
-                    rewards = rewards,
-                    monte_carlo_returns = monte_carlo_returns,
-                    advantages = advantages,
-                    init_states = init_states,
-                    seq_len = seq_len
-                    )
-        return batch
-
-    def expand_episode(self, episode):
-        episode_size = len(episode["rewards"])
-        if episode_size % self.num_step:
-            batch_from_episode = (episode_size // self.num_step + 1)
-        else:
-            batch_from_episode = (episode_size // self.num_step)
-
-        extra_length = batch_from_episode * self.num_step - episode_size
-        last_batch_size = episode_size - (batch_from_episode - 1) * self.num_step
-
-        batched_episode = {}
-        for key, value in episode.items():
-            if key == "init_states":
-                truncated_value = tuple(value[i][::self.num_step] for i in
-                                        range(self.num_layers))
-                batched_episode[key] = truncated_value
-            else:
-                expanded_value = np.concatenate([value, np.zeros((extra_length,) +
-                                                     value.shape[1:])])
-                batched_episode[key] = expanded_value.reshape((-1, self.num_step) +
-                                                         value.shape[1:])
-
-        seq_len = [self.num_step] * (batch_from_episode - 1) + [last_batch_size]
-        batched_episode["seq_len"] = np.array(seq_len)
-        return batched_episode
+        return episode
 
     def samples(self):
-        return self.collect_one_batch()
-
-    def preprocessing(self, image):
-        """ preprocess 42x42x1 uint8 frame into 1764 (42x42) 1D float vector """
-        return image.astype(np.float).ravel()
+        return self.collect_batch()

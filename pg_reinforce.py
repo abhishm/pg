@@ -1,6 +1,3 @@
-# NB. For Mountain Car try more episodes
-
-
 import random
 import numpy as np
 import tensorflow as tf
@@ -10,11 +7,9 @@ class PolicyGradientREINFORCE(object):
   def __init__(self, session,
                      optimizer,
                      policy_network,
-                     state_dim,
+                     observation_space_dim,
                      num_actions,
                      gru_unit_size,
-                     num_step,
-                     num_layers,
                      save_path,
                      global_step,
                      max_gradient=5,       # max gradient norms
@@ -29,13 +24,11 @@ class PolicyGradientREINFORCE(object):
     self.summary_writer = summary_writer
     self.summary_every  = summary_every
     self.gru_unit_size  = gru_unit_size
-    self.num_step       = num_step
-    self.num_layers     = num_layers
     self.no_op          = tf.no_op()
 
     # model components
     self.policy_network = policy_network
-    self.state_dim = state_dim
+    self.observation_space_dim = observation_space_dim
     self.num_actions = num_actions
     self.loss_function = loss_function
 
@@ -67,70 +60,41 @@ class PolicyGradientREINFORCE(object):
 
   def create_input_placeholders(self):
     with tf.name_scope("inputs"):
-      self.states = tf.placeholder(tf.float32, (None, None, self.state_dim), name="states")
-      self.actions = tf.placeholder(tf.int32, (None, None), name="actions")
-      self.returns = tf.placeholder(tf.float32, (None, None), name="returns")
-      self.advantages = tf.placeholder(tf.float32, (None, None), name="advantages")
-      self.init_states = tuple(tf.placeholder(tf.float32, (None, self.gru_unit_size),
-                                                                 name="init_states")
-                                                    for _ in range(self.num_layers))
-      self.seq_len = tf.placeholder(tf.int32, (None,), name="seq_len")
-      self.reward = tf.placeholder(tf.float32, None, name="reward")
+      self.observations = tf.placeholder(tf.float32, (None,) + self.observation_space_dim,
+                                    name="observations")
+      self.actions = tf.placeholder(tf.int32, (None,), name="actions")
+      self.returns = tf.placeholder(tf.float32, (None,), name="returns")
+      self.advantages = tf.placeholder(tf.float32, (None,), name="advantages")
+      self.init_state = tf.placeholder(tf.float32, (None, self.gru_unit_size),
+                                                                 name="init_state")
 
   def create_variables_for_actions(self):
     with tf.name_scope("generating_actions"):
       with tf.variable_scope("policy_network"):
-        self.logit, self.final_state, self.value = self.policy_network(self.states,
-                                                    self.init_states, self.seq_len)
+        self.logit, self.final_state, self.value = self.policy_network(self.observations,
+                                                    self.init_state)
       self.probs = tf.nn.softmax(self.logit)
-      with tf.name_scope("computing_entropy"):
-        self.entropy = tf.reduce_sum(
-                tf.multiply(self.probs, -1.0 * tf.log(self.probs)), axis=1)
+      self.entropy = - tf.reduce_sum(self.probs * tf.log(self.probs))
 
   def create_variables_for_optimization(self):
     with tf.name_scope("optimization"):
-      with tf.name_scope("masker"):
-          self.mask = tf.sequence_mask(self.seq_len, self.num_step)
-          self.maskA = tf.zeros([tf.shape(self.mask)[0], self.num_step // 2])
-          self.maskB = tf.ones([tf.shape(self.mask)[0],
-                               self.num_step - self.num_step // 2])
-          self.truncated_mask = tf.concat([self.maskA, self.maskB], axis=1)
-
-          self.mask = tf.reshape(tf.cast(self.mask, tf.float32), (-1,))
-          self.truncated_mask = tf.reshape(self.truncated_mask, (-1,))
-
       if self.loss_function == "cross_entropy":
-        self.loss_applied = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        self.negative_log_prob = tf.nn.sparse_softmax_cross_entropy_with_logits(
                                             logits=self.logit,
-                                            labels=tf.reshape(self.actions, (-1,)))
+                                            labels=self.actions)
+        self.pl_loss = tf.reduce_sum(self.negative_log_prob * self.advantages)
       elif self.loss_function == "l2":
-        self.one_hot_actions = tf.one_hot(tf.reshape(self.actions, (-1,)),
-                                                        self.num_actions)
-        self.loss_applied = tf.reduce_mean((self.probs - self.one_hot_actions) ** 2,
+        self.one_hot_actions = tf.one_hot(self.actions, self.num_actions)
+        self.prob_diff = tf.reduce_sum((self.probs - self.one_hot_actions) ** 2,
                                             axis=1)
+        self.pl_loss = tf.reduce_sum(self.prob_diff * self.advantages)
       else:
           raise ValueError("loss function type is not defined")
 
-      self.masked_loss_applied = tf.multiply(self.loss_applied, self.mask)
-      self.masked_loss_applied = tf.multiply(self.masked_loss_applied,
-                                                self.truncated_mask)
 
-      self.masked_entropy = tf.multiply(self.entropy, self.mask)
-      self.maksed_entropy = tf.multiply(self.masked_entropy,
-                                            self.truncated_mask)
-      self.masked_entropy = tf.reduce_mean(self.masked_entropy)
+      self.value_loss = 0.5 * tf.reduce_sum((self.value - self.returns) ** 2)
 
-      self.value_loss = (self.value - tf.reshape(self.returns, (-1,))) ** 2
-      self.masked_value_loss = tf.multiply(self.value_loss, self.mask)
-      self.masked_value_loss = tf.multiply(self.masked_value_loss,
-                                           self.truncated_mask)
-
-
-      self.loss = (tf.reduce_mean(tf.multiply(self.masked_loss_applied,
-                                 tf.reshape(self.advantages, (-1,))))
-                   + tf.reduce_mean(self.masked_value_loss))
-
-      self.loss -= self.entropy_bonus * self.masked_entropy
+      self.loss = self.pl_loss + 0.5 * self.value_loss - self.entropy_bonus * self.entropy
 
       self.gradients = self.optimizer.compute_gradients(self.loss)
       self.clipped_gradients = [(tf.clip_by_norm(grad, self.max_gradient), var)
@@ -142,24 +106,11 @@ class PolicyGradientREINFORCE(object):
 
   def create_summaries(self):
     self.loss_summary = tf.summary.scalar("loss", self.loss)
-    self.reward_summary = tf.summary.scalar("reward", self.reward)
-    self.histogram_summaries = []
-    for grad, var in self.gradients:
-        if grad is not None:
-            histogram_summary = tf.summary.histogram(var.name + "/gradient", grad)
-            self.histogram_summaries.append(histogram_summary)
-    self.entropy_summary = tf.summary.scalar("entropy", self.masked_entropy)
-    self.weight_summaries = []
-    weights = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="policy_network")
-    for w in weights:
-        w_summary = tf.summary.histogram("policy_weights/" + w.name, w)
-        self.weight_summaries.append(w_summary)
+    self.entropy_summary = tf.summary.scalar("entropy", self.entropy)
 
   def merge_summaries(self):
-    self.summarize = tf.summary.merge([self.loss_summary + self.entropy_summary]
-                                      + self.histogram_summaries
-                                      + self.weight_summaries
-                                      + [self.reward_summary])
+    self.summarize = tf.summary.merge([self.loss_summary
+                                      + self.entropy_summary])
 
   def load_model(self):
     try:
@@ -180,35 +131,29 @@ class PolicyGradientREINFORCE(object):
     self.create_summaries()
     self.merge_summaries()
 
-  def sampleAction(self, states, init_states, seq_len=[1]):
-    probs, final_state, value = self.session.run([self.probs,
-                                                       self.final_state, self.value],
-                                 {self.states: states, self.init_states: init_states,
-                                  self.seq_len: seq_len})
+  def sampleAction(self, observations, init_state):
+    probs, final_state, value = self.session.run(
+                [self.probs, self.final_state, self.value],
+                {self.observations: observations, self.init_state: init_state})
     return np.random.choice(self.num_actions, p=probs[0]), final_state, value
 
-  def compute_action_probabilities(self, states, init_states, seq_len):
-    return self.session.run(self.probs, {self.states: states,
-                                         self.init_states: init_states,
-                                         self.seq_len: seq_len})
+  def compute_action_probabilities(self, observations, init_state):
+    return self.session.run(self.probs, {self.observations: observations,
+                                         self.init_state: init_state})
 
-  def update_parameters(self, states, actions, returns, advantages,
-                        init_states, seq_len, reward):
+  def update_parameters(self, observations, actions, returns, advantages,
+                        init_state):
     train_itr = self.session.run(self.global_step)
     write_summary = train_itr % self.summary_every == 0
-    self.reward_stats.append(reward)
     _, summary = self.session.run([self.train_op,
                                    self.summarize if write_summary else self.no_op],
-                                  {self.states: states,
+                                  {self.observations: observations,
                                    self.actions: actions,
                                    self.returns: returns,
                                    self.advantages: advantages,
-                                   self.init_states: init_states,
-                                   self.seq_len: seq_len,
-                                   self.reward: np.mean(self.reward_stats)})
+                                   self.init_state: init_state})
 
     if write_summary:
         self.summary_writer.add_summary(summary, train_itr + 1)
         self.saver.save(self.session, self.save_path, global_step=self.global_step)
         print ("SAVED MODEL #{}".format(train_itr + 1))
-        self.reward_stats = []
