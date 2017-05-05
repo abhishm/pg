@@ -82,7 +82,7 @@ pg_reinforce = PolicyGradientREINFORCE(sess,
                                        max_gradient=max_gradient,
                                        entropy_bonus=entropy_bonus,
                                        summary_writer=writer,
-                                       summary_every=10,
+                                       summary_every=100,
                                        loss_function=loss_function)
 
 sampler = Sampler(pg_reinforce, env, gru_unit_size, num_step, gamma=discount,

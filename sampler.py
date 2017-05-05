@@ -20,6 +20,8 @@ class Sampler(object):
         self.summary_writer = summary_writer
         self.observation = self.env.reset()
         self.init_state = np.zeros((1, self.gru_unit_size))
+        self.reward = 0
+        self.length = 0
 
     def discounted_x(self, x, gamma):
         return scipy.signal.lfilter([1], [1, -gamma], x[::-1])[::-1]
@@ -56,10 +58,12 @@ class Sampler(object):
             observations.append(self.observation)
             actions.append(action)
             rewards.append(reward)
-            values.append(value[0, 0])
+            values.append(value[0])
             # going to next state
             self.observation = next_ob
             self.init_state = next_state
+            self.reward += reward
+            self.length += 1
 
             if info:
                 summary = tf.Summary()
@@ -72,6 +76,9 @@ class Sampler(object):
             if done:
                 self.observation = self.env.reset()
                 self.init_state = np.zeros((1, self.gru_unit_size))
+                print("Episode reward: {0}, Episode length: {1}".format(self.reward, self.length))
+                self.reward = 0
+                self.length = 0
                 break
 
         if done:
@@ -80,7 +87,6 @@ class Sampler(object):
             _, _, final_value = self.policy.sampleAction(
                                         self.observation[np.newaxis, :],
                                         self.init_state)
-            final_value = final_value[0, 0]
 
         returns, advantages = self.n_step_returns(rewards, values, final_value)
 

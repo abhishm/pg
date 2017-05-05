@@ -38,7 +38,7 @@ class PolicyGradientREINFORCE(object):
 
     #counter
     self.global_step = global_step
-    self.reward_stats = []
+    self.summary_counter = 0
 
     # create and initialize variables
     self.create_variables()
@@ -96,21 +96,34 @@ class PolicyGradientREINFORCE(object):
 
       self.loss = self.pl_loss + 0.5 * self.value_loss - self.entropy_bonus * self.entropy
 
+      inc_step = self.global_step.assign_add(tf.shape(self.observations)[0])
+
       self.gradients = self.optimizer.compute_gradients(self.loss)
       self.clipped_gradients = [(tf.clip_by_norm(grad, self.max_gradient), var)
-                                  for grad, var in self.gradients
-                                  if grad is not None]
+                                  for grad, var in self.gradients]
 
-      self.train_op = self.optimizer.apply_gradients(self.clipped_gradients,
-                                                     self.global_step)
+      self.grad_norm = tf.global_norm([grad for grad, var in self.gradients])
+      self.var_norm = tf.global_norm(tf.trainable_variables())
+
+      self.train_op = tf.group(
+            self.optimizer.apply_gradients(self.clipped_gradients), inc_step)
 
   def create_summaries(self):
-    self.loss_summary = tf.summary.scalar("loss", self.loss)
-    self.entropy_summary = tf.summary.scalar("entropy", self.entropy)
+    batch_size = tf.to_float(tf.shape(self.observations)[0])
+    self.policy_loss_summary = tf.summary.scalar("loss/policy_loss", self.pl_loss / batch_size)
+    self.entropy_loss_summary = tf.summary.scalar("loss/entropy_loss", self.entropy / batch_size)
+    self.value_loss_summary  = tf.summary.scalar("loss/value_loss", self.value_loss / batch_size)
+    self.total_loss_summary = tf.summary.scalar("loss/total_loss", self.loss / batch_size)
+    self.grad_norm_summary = tf.summary.scalar("loss/grad_norm", self.grad_norm)
+    self.var_norm_summary = tf.summary.scalar("loss/var_norm", self.var_norm)
 
   def merge_summaries(self):
-    self.summarize = tf.summary.merge([self.loss_summary
-                                      + self.entropy_summary])
+    self.summarize = tf.summary.merge([self.policy_loss_summary,
+                                      self.entropy_loss_summary,
+                                      self.value_loss_summary,
+                                      self.total_loss_summary,
+                                      self.grad_norm_summary,
+                                      self.var_norm_summary])
 
   def load_model(self):
     try:
@@ -143,10 +156,11 @@ class PolicyGradientREINFORCE(object):
 
   def update_parameters(self, observations, actions, returns, advantages,
                         init_state):
-    train_itr = self.session.run(self.global_step)
-    write_summary = train_itr % self.summary_every == 0
-    _, summary = self.session.run([self.train_op,
-                                   self.summarize if write_summary else self.no_op],
+    self.summary_counter += 1
+    write_summary = self.summary_counter == self.summary_every
+    _, summary, global_step = self.session.run([self.train_op,
+                                   self.summarize if write_summary else self.no_op,
+                                   self.global_step],
                                   {self.observations: observations,
                                    self.actions: actions,
                                    self.returns: returns,
@@ -154,6 +168,6 @@ class PolicyGradientREINFORCE(object):
                                    self.init_state: init_state})
 
     if write_summary:
-        self.summary_writer.add_summary(summary, train_itr + 1)
+        self.summary_writer.add_summary(summary, global_step)
         self.saver.save(self.session, self.save_path, global_step=self.global_step)
-        print ("SAVED MODEL #{}".format(train_itr + 1))
+        self.summary_counter = 0
