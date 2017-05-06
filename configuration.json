@@ -1,5 +1,5 @@
 {
-  "batch_size": 2,
+  "batch_size": 3,
   "entropy_bonus": 0.01,
   "env_name": "PongDeterministic-v3",
   "gru_unit_size": 256,
@@ -13,7 +13,7 @@
   "max_step": 20000,
   "num_itr": 5000000,
   "num_step": 20,
-  "train": 1,
+  "train": 0,
   "discount": 0.99,
   "lambda_": 1.00
 }
