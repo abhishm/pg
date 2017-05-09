@@ -1,19 +1,19 @@
 {
-  "batch_size": 3,
+  "batch_size": 6,
   "entropy_bonus": 0.01,
-  "env_name": "PongDeterministic-v3",
+  "env_name": "Breakout-v0",
   "gru_unit_size": 256,
   "learning": {"learning_rate": 0.0001,
-               "learning_adaptive": 0,
-               "decay_steps": 500,
-               "decay_rate": 0.96
+               "learning_adaptive":1 ,
+               "decay_steps": 50000,
+               "decay_rate": 0.99
              },
   "loss_function": "cross_entropy",
   "max_gradient_norm": 40.0,
   "max_step": 20000,
-  "num_itr": 5000000,
+  "num_itr": 500000,
   "num_step": 20,
-  "train": 0,
+  "train": 1,
   "discount": 0.99,
   "lambda_": 1.00
 }
